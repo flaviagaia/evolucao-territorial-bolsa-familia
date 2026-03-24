@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-import shutil
+from typing import Any
 
 import pandas as pd
 
-from pyspark.sql import SparkSession, Window
-from pyspark.sql import functions as F
+try:
+    from pyspark.sql import SparkSession, Window
+    from pyspark.sql import functions as F
+    PYSPARK_AVAILABLE = True
+except ModuleNotFoundError:
+    SparkSession = Any  # type: ignore[assignment]
+    Window = None  # type: ignore[assignment]
+    F = None  # type: ignore[assignment]
+    PYSPARK_AVAILABLE = False
 
 from .config import (
     ANOMALY_METRICS_PATH,
@@ -25,6 +31,8 @@ from .ml_models import run_ml_models
 
 
 def create_spark_session(app_name: str = "bolsa-familia-territorial-panel") -> SparkSession:
+    if not PYSPARK_AVAILABLE:
+        raise ModuleNotFoundError("pyspark is not installed in this environment")
     return (
         SparkSession.builder.master("local[*]")
         .appName(app_name)
@@ -158,6 +166,8 @@ def run_pipeline_pandas() -> dict[str, float]:
 
 
 def _load_raw_dataset(spark: SparkSession):
+    if not PYSPARK_AVAILABLE or F is None:
+        raise ModuleNotFoundError("pyspark is not installed in this environment")
     return (
         spark.read.option("header", True)
         .option("inferSchema", True)
@@ -172,6 +182,8 @@ def _load_raw_dataset(spark: SparkSession):
 
 
 def build_territorial_metrics(spark: SparkSession):
+    if not PYSPARK_AVAILABLE or Window is None or F is None:
+        raise ModuleNotFoundError("pyspark is not installed in this environment")
     raw_df = _load_raw_dataset(spark)
 
     pivot_df = (
@@ -229,6 +241,8 @@ def build_territorial_metrics(spark: SparkSession):
 
 
 def build_operational_metrics(territorial_df):
+    if not PYSPARK_AVAILABLE or F is None:
+        raise ModuleNotFoundError("pyspark is not installed in this environment")
     spark = territorial_df.sparkSession
     monthly_df = (
         territorial_df.filter(F.col("ano") >= 2021)
