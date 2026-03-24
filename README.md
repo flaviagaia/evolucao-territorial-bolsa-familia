@@ -4,6 +4,11 @@ Projeto em `Python + PySpark + Streamlit` para analisar a evolução territorial
 
 Por padrão, a execução local usa um fallback em `pandas` para garantir reprodutibilidade mesmo em ambientes sem `Java`. O pipeline `PySpark` continua implementado no projeto e pode ser ativado definindo `USE_PYSPARK=1` em um ambiente com Java configurado.
 
+## O que é o Bolsa Família
+
+O Bolsa Família é o principal programa de transferência de renda do Brasil. Segundo o Ministério do Desenvolvimento e Assistência Social, Família e Combate à Fome, o programa busca garantir renda para famílias em situação de pobreza, fortalecer o acesso a direitos básicos e articular proteção social com outras políticas públicas. Para ter direito ao programa, a regra principal considera a renda mensal por pessoa da família, e a entrada depende de inscrição e atualização no Cadastro Único. O desenho atual do benefício considera o tamanho e a composição da família, com parcelas e complementos específicos para diferentes perfis familiares.  
+Fontes: [MDS - Bolsa Família](https://www.gov.br/mds/pt-br/acoes-e-programas/bolsa-familia), [MDS - Benefícios do Bolsa Família](https://www.gov.br/mds/pt-br/acesso-a-informacao/perguntas_frequentes/bolsa-familia-beneficiario/2-quais-sao-os-beneficios)
+
 ## Para que serve
 
 Este projeto serve para reproduzir um tipo de análise comum em políticas públicas e gestão social:
@@ -15,6 +20,14 @@ Este projeto serve para reproduzir um tipo de análise comum em políticas públ
 - prever repasses futuros com um modelo supervisionado;
 - segmentar municípios por perfil socioeconômico e operacional;
 - detectar anomalias em comportamento de pagamento vs saque.
+
+Na prática, ele simula um fluxo que faria sentido em times de dados do setor público:
+
+- acompanhar a expansão ou retração do programa no território;
+- comparar municípios de portes e perfis diferentes;
+- identificar locais com maior concentração de famílias atendidas;
+- monitorar sinais operacionais que poderiam justificar investigação adicional;
+- apoiar priorização de municípios para análise, gestão e auditoria.
 
 ## Nome mais adequado para o repositório
 
@@ -47,6 +60,35 @@ Cobertura:
   - famílias beneficiárias
   - benefício médio
 
+## O que significam os dados
+
+O dataset público usado aqui é uma base agregada por município e ano. Isso significa que ele não traz registros individuais de famílias ou beneficiários, mas sim indicadores consolidados por território.
+
+As colunas mais importantes para a análise são:
+
+- `co_mun` / `codigo_municipio`
+  Identificador do município.
+- `no_mun` / `municipio`
+  Nome do município.
+- `ano`
+  Ano de referência da observação.
+- `social_subcategoria`
+  Tipo de indicador observado no ano:
+  - `Valor Total Repassado do Bolsa Família`
+  - `Famílias beneficiárias`
+  - `Benefício médio recebido pelas famílias do Bolsa Família`
+- `valor`
+  Valor numérico associado ao indicador.
+
+A partir desses campos, o projeto reconstrói três dimensões analíticas principais:
+
+1. `Evolução territorial`
+   Como o volume do programa muda no tempo e no espaço.
+2. `Perfil municipal`
+   Como municípios se diferenciam em escala, benefício médio e cobertura.
+3. `Operação simulada`
+   Como seria um monitoramento mensal de pagamento disponibilizado vs saque estimado.
+
 ### Nota metodológica importante
 
 A parte de `evolução territorial` usa base pública real.
@@ -67,6 +109,75 @@ A parte de `pagamento vs saque` é uma **camada operacional sintética**, calibr
   Para o painel interativo.
 - `Plotly`
   Para gráficos territoriais e operacionais.
+
+## O que são as técnicas usadas
+
+### Engenharia de dados e agregação
+
+O projeto primeiro organiza a base em formato analítico:
+
+- leitura do CSV bruto;
+- padronização de nomes e tipos;
+- `pivot` das linhas por subcategoria para transformar indicadores em colunas;
+- cálculo de crescimento anual;
+- criação de uma camada mensal sintética para monitoramento operacional.
+
+Essa etapa é importante porque dados públicos administrativos costumam vir em formato tabular “longo”, mas análises territoriais e modelos precisam de uma estrutura mais estável por município e por período.
+
+### Regressão para prever repasse futuro
+
+A camada de regressão tenta prever o `valor_total_repassado` no ano mais recente usando sinais históricos do próprio município.
+
+Tecnicamente, isso funciona como um problema supervisionado de regressão:
+
+- entrada: lags do repasse, número de famílias, benefício médio e crescimento anterior;
+- saída: valor total repassado no período seguinte.
+
+Modelo usado:
+
+- `RandomForestRegressor`
+
+Por que faz sentido aqui:
+
+- lida bem com relações não lineares;
+- não exige muitos pressupostos estatísticos fortes;
+- funciona bem como baseline para dados tabulares públicos.
+
+Métrica usada:
+
+- `R²`
+  Mede quanto da variabilidade do valor repassado o modelo consegue explicar.
+
+### Clustering de municípios
+
+O clustering agrupa municípios com perfis parecidos de repasse, cobertura e comportamento operacional.
+
+Modelo usado:
+
+- `KMeans`
+
+Objetivo:
+
+- encontrar perfis municipais semelhantes sem precisar de rótulos prévios.
+
+Métrica usada:
+
+- `silhouette score`
+  Mede o quão bem separados e coesos os grupos estão.
+
+### Detecção de anomalias operacionais
+
+Essa camada usa a base operacional mensal sintética para identificar pontos fora do padrão.
+
+Modelo usado:
+
+- `IsolationForest`
+
+Objetivo:
+
+- encontrar municípios e meses com combinações atípicas de pagamento, saque, gap e taxa de saque.
+
+Esse tipo de abordagem é útil quando queremos priorizar inspeção humana, auditoria ou revisão gerencial sem depender de um rótulo histórico explícito de erro.
 
 ## Pipeline
 
@@ -161,6 +272,13 @@ Features:
 - `silhouette score`: `0.3158`
 - `anomalias operacionais`: `74`
 
+## Como interpretar os resultados
+
+- A parte territorial é a mais forte do projeto, porque está baseada diretamente em dados públicos reais.
+- A regressão deve ser lida como uma linha de base exploratória, não como modelo final de previsão fiscal, já que a série é anual, curta e tem lacuna em `2022`.
+- O clustering é útil para separar perfis de municípios e apoiar segmentação territorial.
+- A detecção de anomalias é útil para priorizar investigação operacional, especialmente quando não existe uma base rotulada de problemas.
+
 ## Como executar
 
 ```bash
@@ -185,6 +303,11 @@ python -m unittest discover -s tests -v
 
 ## English
 
+### What Bolsa Família is
+
+Bolsa Família is Brazil’s main income transfer program. According to the Ministry of Development and Social Assistance, it is designed to support low-income families, strengthen access to social rights, and connect income support with broader public policies. Eligibility is mainly based on per-capita household income, and entry depends on registration and updated information in Cadastro Único. The current benefit structure takes household size and composition into account.  
+Sources: [MDS - Bolsa Família](https://www.gov.br/mds/pt-br/acoes-e-programas/bolsa-familia), [MDS - Benefit structure](https://www.gov.br/mds/pt-br/acesso-a-informacao/perguntas_frequentes/bolsa-familia-beneficiario/2-quais-sao-os-beneficios)
+
 ### What this project is for
 
 This project reproduces a public-policy analytics workflow using `Python + PySpark + Streamlit`:
@@ -203,6 +326,20 @@ The territorial layer uses a public open dataset from the state of Alagoas cover
 
 The `payment vs withdrawal` layer is **synthetic but calibrated** from the public annual figures, created to reproduce the operational monitoring use case when official transactional downloads are unavailable for automated access.
 
+### What the data represents
+
+The public dataset is aggregated by municipality and year, not at the beneficiary level. It provides annual indicators such as:
+
+- total transferred amount;
+- number of beneficiary families;
+- average benefit per family.
+
+The project transforms those indicators into:
+
+- a territorial trend layer;
+- a municipal profile layer;
+- and a monthly operational monitoring layer.
+
 ### Stack
 
 - `PySpark`
@@ -210,6 +347,15 @@ The `payment vs withdrawal` layer is **synthetic but calibrated** from the publi
 - `scikit-learn`
 - `Streamlit`
 - `Plotly`
+
+### Techniques used
+
+- data reshaping and pivoting;
+- annual growth calculations;
+- synthetic operational modeling calibrated from public figures;
+- supervised regression with `RandomForestRegressor`;
+- unsupervised clustering with `KMeans`;
+- anomaly detection with `IsolationForest`.
 
 ### Current outputs
 
