@@ -29,18 +29,6 @@ Na prática, ele simula um fluxo que faria sentido em times de dados do setor p�
 - monitorar sinais operacionais que poderiam justificar investigação adicional;
 - apoiar priorização de municípios para análise, gestão e auditoria.
 
-## Nome mais adequado para o repositório
-
-Se você quiser renomear o projeto depois no GitHub, os nomes que fazem mais sentido agora são:
-
-- `bolsa-familia-territorial-analytics`
-- `bolsa-familia-social-analytics`
-- `bolsa-familia-monitoring-and-ml`
-
-Minha recomendação principal:
-
-- `bolsa-familia-territorial-analytics`
-
 ## Fonte de dados
 
 Base pública utilizada:
